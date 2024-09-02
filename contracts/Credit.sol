@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract CreditToken is ERC20, Ownable {
     // Constructor to initialize the token and mint initial supply to the owner
-    constructor(uint256 initialSupply) ERC20("CreditToken", "CREDIT") {
+    constructor(uint256 initialSupply) ERC20("CreditToken", "CREDIT") Ownable(msg.sender) {
         _mint(msg.sender, initialSupply);
     }
 
