@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract PackFactory is AccessControl {
+contract PackFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     // Define roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
@@ -16,7 +17,6 @@ contract PackFactory is AccessControl {
         address token;         // Token address (if non-native token is used)
         address requiredOwner; // Optional owner restriction
         string name;
-        // bool isNative;         // True if pack is purchased using native token (e.g., ETH)
     }
 
     // Mapping from Pack ID to Pack details
@@ -26,11 +26,11 @@ contract PackFactory is AccessControl {
     event PackConfigured(uint256 indexed packId, uint256 packType, uint256 price);
     event PackRemoved(uint256 indexed packId);
 
-    // Constructor to set up the initial admin role
-    constructor(address admin) {
+    // Initializer to set up the initial admin role
+    function initialize(address admin) public initializer {
         // Grant the admin role to the deployer and the provided admin address
         _grantRole(ADMIN_ROLE, admin);
-        _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, admin);
         
         // Set ADMIN_ROLE as its own admin role
         _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
@@ -53,7 +53,6 @@ contract PackFactory is AccessControl {
     ) public onlyAdmin {
         require(bytes(_name).length > 0, "Name cannot be empty");
         require(_price > 0, "Price must be greater than zero");
-        require(_token != address(0), "Invalid token address for non-native token");
 
         packs[_id] = Pack({
             id: _id,
@@ -78,4 +77,7 @@ contract PackFactory is AccessControl {
         delete packs[_id];
         emit PackRemoved(_id);
     }
+
+    // Internal function to authorize upgrades, restricted to admins
+    function _authorizeUpgrade(address newImplementation) internal override onlyAdmin { }
 }
