@@ -28,20 +28,20 @@ contract PackStore is PackFactory, ReentrancyGuard {
     event PackSold(address indexed seller, address indexed buyer, uint256 indexed packId, uint256 price);
 
     // Buy pack using native token (e.g., ETH)
-    function buyPackWithNative(uint256 packId) public payable nonReentrant {
-        Pack memory pack = getPackDetails(packId);
-        require(msg.value >= pack.price, "Insufficient funds sent");
+    // function buyPackWithNative(uint256 packId) public payable nonReentrant {
+    //     Pack memory pack = getPackDetails(packId);
+    //     require(msg.value >= pack.price, "Insufficient funds sent");
 
-        // Check if the pack already has an owner
-        require(packOwners[packId] == address(0), "Pack already purchased");
+    //     // Check if the pack already has an owner
+    //     require(packOwners[packId] == address(0), "Pack already purchased");
 
-        // Store the purchase
-        userPackOwnership[msg.sender][packId] = true;
-        packOwners[packId] = msg.sender;
+    //     // Store the purchase
+    //     userPackOwnership[msg.sender][packId] = true;
+    //     packOwners[packId] = msg.sender;
 
-        // Emit the purchase event
-        emit PackPurchased(msg.sender, packId);
-    }
+    //     // Emit the purchase event
+    //     emit PackPurchased(msg.sender, packId);
+    // }
 
     // Buy pack using ERC-20 token
     function buyPackWithTokenFromSystem(uint256 packId, address tokenAddress) public nonReentrant {
@@ -84,9 +84,9 @@ contract PackStore is PackFactory, ReentrancyGuard {
     }
 
     // Function to withdraw collected native tokens by an admin
-    function withdraw() public onlyRole(ADMIN_ROLE) nonReentrant {
-        payable(msg.sender).transfer(address(this).balance);
-    }
+    // function withdraw() public onlyRole(ADMIN_ROLE) nonReentrant {
+    //     payable(msg.sender).transfer(address(this).balance);
+    // }
 
     // Function to withdraw ERC-20 tokens by an admin
     function withdrawTokens(address tokenAddress) public onlyRole(ADMIN_ROLE) nonReentrant {
