@@ -1,79 +1,115 @@
-/* eslint-disable no-undef */
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("PackFactory Contract", function () {
-  let packFactory, creditToken, deployer, user1, user2;
+describe("CreditToken and PackStore", function () {
+  let creditToken, packStore;
+  let owner, addr1, addr2;
+  let packId = 1;
+  let initialSupply = ethers.utils.parseEther("1000000");
 
-  beforeEach(async function () {
-    [deployer, user1, user2] = await ethers.getSigners();
-
-    // Deploy CreditToken contract (mock ERC-20 token)
+  before(async function () {
+    // Deploy the CreditToken contract
     const CreditToken = await ethers.getContractFactory("CreditToken");
-    creditToken = await CreditToken.deploy(ethers.utils.parseUnits("1000", 18)); // 1000 tokens with 18 decimals
-    await creditToken.deployed();
+    creditToken = await CreditToken.deploy();
+    await creditToken.initialize(initialSupply);
 
-    // Deploy PackFactory contract
+    // Deploy the PackFactory library
     const PackFactory = await ethers.getContractFactory("PackFactory");
-    packFactory = await PackFactory.deploy();
+    const packFactory = await PackFactory.deploy();
     await packFactory.deployed();
+
+    // Deploy the PackStore contract
+    const PackStore = await ethers.getContractFactory("PackStore", {
+      libraries: {
+        PackFactory: packFactory.address,
+      },
+    });
+
+    [owner, addr1, addr2] = await ethers.getSigners();
+    packStore = await PackStore.deploy();
+    await packStore.deployed();
+
+    // Create a pack for testing
+    await packStore.createPack(
+      packId,
+      creditToken.address,
+      ethers.utils.parseEther("100")
+    );
   });
 
-  it("should configure a pack with native tokens (ETH)", async function () {
-    // Configure a pack to be purchased with native tokens
-    await packFactory.configurePack(
-      1,
-      "NativePack",
-      1, // packType = 1 (Standard)
-      ethers.utils.parseEther("1"), // Price: 1 ETH
-      ethers.constants.AddressZero, // No ERC-20 token
-      deployer.address // Required owner (optional)
-    );
-
-    // Verify that the pack is correctly configured
-    const packDetails = await packFactory.getPackDetails(1);
-    expect(packDetails.id).to.equal(1);
-    expect(packDetails.name).to.equal("NativePack");
-    expect(packDetails.price).to.equal(ethers.utils.parseEther("1"));
-    expect(packDetails.token).to.equal(ethers.constants.AddressZero);
+  it("Should initialize the CreditToken contract", async function () {
+    expect(await creditToken.name()).to.equal("CreditToken");
+    expect(await creditToken.symbol()).to.equal("CREDIT");
+    expect(await creditToken.totalSupply()).to.equal(initialSupply);
+    expect(await creditToken.balanceOf(owner.address)).to.equal(initialSupply);
   });
 
-  it("should configure a pack with ERC-20 tokens", async function () {
-    const packPrice = ethers.utils.parseUnits("100", 18); // Pack price in ERC-20 token (100 tokens)
-
-    // Configure a pack to be purchased with ERC-20 tokens
-    await packFactory.configurePack(
-      2,
-      "ERC20Pack",
-      2, // packType = 2 (Deluxe)
-      packPrice,
-      creditToken.address, // Use the deployed ERC-20 token
-      deployer.address // Required owner (optional)
-    );
-
-    // Verify that the pack is correctly configured
-    const packDetails = await packFactory.getPackDetails(2);
-    expect(packDetails.id).to.equal(2);
-    expect(packDetails.name).to.equal("ERC20Pack");
-    expect(packDetails.price).to.equal(packPrice);
-    expect(packDetails.token).to.equal(creditToken.address);
+  it("Should allow the owner to mint additional tokens", async function () {
+    const mintAmount = ethers.utils.parseEther("5000");
+    await creditToken.mint(addr1.address, mintAmount);
+    expect(await creditToken.balanceOf(addr1.address)).to.equal(mintAmount);
   });
 
-  it("should allow the owner to remove a pack", async function () {
-    // Configure and then remove a pack
-    await packFactory.configurePack(
-      4,
-      "RemovablePack",
-      1,
-      ethers.utils.parseEther("1"),
-      ethers.constants.AddressZero,
-      deployer.address
-    );
+  it("Should allow a user to buy a pack from the system", async function () {
+    // Approve token transfer
+    await creditToken
+      .connect(addr1)
+      .approve(packStore.address, ethers.utils.parseEther("100"));
 
-    await packFactory.removePack(4);
+    // Buy pack with tokens from the system
+    await packStore
+      .connect(addr1)
+      .buyPackWithTokenFromSystem(packId, creditToken.address);
 
-    // Verify that the pack has been removed
-    const packDetails = await packFactory.getPackDetails(4);
-    expect(packDetails.id).to.equal(0); // The pack should no longer exist (depending on how your remove logic works)
+    // Verify ownership
+    expect(await packStore.getPackOwner(packId)).to.equal(addr1.address);
+  });
+
+  it("Should allow a user to buy a pack from another user", async function () {
+    const price = ethers.utils.parseEther("150");
+
+    // Approve token transfer
+    await creditToken.connect(addr2).approve(packStore.address, price);
+
+    // Buy pack with tokens from another user
+    await packStore
+      .connect(addr2)
+      .buyPackWithTokenFromUser(packId, creditToken.address, price);
+
+    // Verify ownership transfer
+    expect(await packStore.getPackOwner(packId)).to.equal(addr2.address);
+  });
+
+  it("Should not allow a user to buy their own pack", async function () {
+    const price = ethers.utils.parseEther("150");
+
+    // Attempt to buy own pack
+    await expect(
+      packStore
+        .connect(addr2)
+        .buyPackWithTokenFromUser(packId, creditToken.address, price)
+    ).to.be.revertedWith("Cannot buy your own pack");
+  });
+
+  it("Should not allow buying an unowned pack", async function () {
+    const invalidPackId = 999;
+    const price = ethers.utils.parseEther("100");
+
+    await expect(
+      packStore
+        .connect(addr1)
+        .buyPackWithTokenFromUser(invalidPackId, creditToken.address, price)
+    ).to.be.revertedWith("Pack not owned");
+  });
+
+  it("Should allow the admin to withdraw tokens", async function () {
+    const initialBalance = await creditToken.balanceOf(owner.address);
+
+    // Withdraw tokens
+    await packStore.connect(owner).withdrawTokens(creditToken.address);
+
+    // Check balance after withdrawal
+    const finalBalance = await creditToken.balanceOf(owner.address);
+    expect(finalBalance).to.be.gt(initialBalance);
   });
 });
